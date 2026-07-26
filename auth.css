@@ -1,0 +1,260 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #090d1d;
+  color: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(48, 205, 196, 0.2), transparent 28%),
+    radial-gradient(circle at 88% 75%, rgba(106, 74, 255, 0.22), transparent 32%),
+    linear-gradient(145deg, #090d1d, #17143a 55%, #0c1730);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.access-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+}
+
+.access-card {
+  width: min(100%, 490px);
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid rgba(118, 228, 219, 0.22);
+  border-radius: 28px;
+  background: rgba(9, 15, 36, 0.88);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #61e9dc, #4f83ff 60%, #8f60ff);
+  color: #071022;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.brand div {
+  display: grid;
+  gap: 2px;
+}
+
+.brand strong {
+  letter-spacing: -0.02em;
+}
+
+.brand span:last-child {
+  color: #9fb0ce;
+  font-size: 13px;
+}
+
+.course-heading {
+  margin: 42px 0 28px;
+}
+
+.eyebrow {
+  color: #62ded5;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.course-heading h1 {
+  margin: 8px 0 4px;
+  font-size: clamp(38px, 8vw, 56px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.course-heading p {
+  margin: 12px 0 0;
+  color: #b9c8e3;
+  font-size: 17px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 5px;
+  border-radius: 14px;
+  background: #10172f;
+}
+
+.auth-tab {
+  padding: 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #93a4c4;
+  cursor: pointer;
+}
+
+.auth-tab.active {
+  background: #283456;
+  color: #ffffff;
+  font-weight: 750;
+}
+
+form {
+  display: grid;
+  gap: 10px;
+}
+
+label {
+  margin-top: 5px;
+  color: #dce5f6;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+input {
+  width: 100%;
+  padding: 14px 15px;
+  border: 1px solid #344464;
+  border-radius: 12px;
+  outline: none;
+  background: #0b1228;
+  color: #ffffff;
+}
+
+input:focus {
+  border-color: #62ded5;
+  box-shadow: 0 0 0 3px rgba(98, 222, 213, 0.14);
+}
+
+.primary-button {
+  min-height: 50px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 13px;
+  background: linear-gradient(100deg, #55ded3, #6393ff);
+  color: #071022;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.text-button {
+  width: 100%;
+  margin-top: 16px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #91d8d4;
+  cursor: pointer;
+}
+
+.notice {
+  margin: 18px 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(100, 214, 205, 0.35);
+  border-radius: 12px;
+  background: rgba(62, 189, 181, 0.1);
+  color: #dbfffb;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.notice-error {
+  border-color: rgba(255, 127, 144, 0.4);
+  background: rgba(170, 43, 63, 0.18);
+  color: #ffd9df;
+}
+
+.notice-warning {
+  border-color: rgba(255, 199, 84, 0.42);
+  background: rgba(171, 112, 10, 0.16);
+  color: #ffe8b2;
+}
+
+.access-progress {
+  justify-items: center;
+  padding: 24px 0 12px;
+  color: #c7d6ee;
+  text-align: center;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(113, 231, 222, 0.18);
+  border-top-color: #71e7de;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.access-help {
+  margin: 24px 0 0;
+  color: #8393b0;
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.sign-out {
+  position: fixed;
+  z-index: 9999;
+  right: 16px;
+  bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(8, 14, 32, 0.86);
+  color: #e9f4ff;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .access-card {
+    border-radius: 22px;
+  }
+
+  .course-heading {
+    margin-top: 32px;
+  }
+}
+

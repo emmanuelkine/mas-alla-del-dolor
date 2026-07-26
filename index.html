@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Acceso protegido al curso Más Allá del Dolor de KineCheck Academy."
+    />
+    <meta name="theme-color" content="#11152b" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
+    />
+    <title>Más Allá del Dolor | Acceso seguro</title>
+    <link rel="stylesheet" href="./auth.css" />
+    <link rel="stylesheet" href="./assets/course.css" />
+    <script src="./config.js" defer></script>
+    <script type="module" src="./auth-gate.js"></script>
+  </head>
+  <body>
+    <main id="access-shell" class="access-shell">
+      <section class="access-card" aria-labelledby="access-title">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">K</span>
+          <div>
+            <strong>KineCheck Academy</strong>
+            <span>Acceso clínico protegido</span>
+          </div>
+        </div>
+
+        <div class="course-heading">
+          <span class="eyebrow">CURSO INTERACTIVO</span>
+          <h1 id="access-title">Más allá del dolor</h1>
+          <p>Evaluación musculoesquelética integral</p>
+        </div>
+
+        <div id="setup-warning" class="notice notice-warning" hidden>
+          La protección todavía necesita conectarse al servicio de acceso.
+        </div>
+
+        <div id="auth-panel">
+          <div class="auth-tabs" role="tablist" aria-label="Opciones de acceso">
+            <button id="login-tab" class="auth-tab active" type="button" role="tab">
+              Ingresar
+            </button>
+            <button id="signup-tab" class="auth-tab" type="button" role="tab">
+              Crear cuenta
+            </button>
+          </div>
+
+          <form id="auth-form" novalidate>
+            <label for="email">Correo utilizado en la compra</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              inputmode="email"
+              required
+              placeholder="nombre@correo.cl"
+            />
+
+            <label for="password">Contraseña</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              minlength="8"
+              required
+              placeholder="Mínimo 8 caracteres"
+            />
+
+            <button id="auth-submit" class="primary-button" type="submit">
+              Ingresar al curso
+            </button>
+          </form>
+
+          <button id="forgot-password" class="text-button" type="button">
+            Olvidé mi contraseña
+          </button>
+        </div>
+
+        <form id="recovery-form" hidden>
+          <h2>Crea una contraseña nueva</h2>
+          <label for="new-password">Nueva contraseña</label>
+          <input
+            id="new-password"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            required
+            placeholder="Mínimo 8 caracteres"
+          />
+          <button class="primary-button" type="submit">Guardar contraseña</button>
+        </form>
+
+        <div id="access-progress" class="access-progress" hidden aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <p id="progress-message">Verificando tu acceso…</p>
+        </div>
+
+        <div id="auth-message" class="notice" hidden aria-live="polite"></div>
+
+        <p class="access-help">
+          Debes usar el mismo correo con el que realizaste la compra en Hotmart.
+        </p>
+      </section>
+    </main>
+
+    <div id="root" hidden></div>
+    <button id="sign-out" class="sign-out" type="button" hidden>
+      Cerrar sesión
+    </button>
+    <noscript>Necesitas activar JavaScript para acceder al curso.</noscript>
+  </body>
+</html>
+
