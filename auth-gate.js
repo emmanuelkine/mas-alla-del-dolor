@@ -1,42 +1,38 @@
-const CONFIG = window.KINECHECK_CONFIG;
+const CONFIG = window.KINECHECK_CONFIG || {};
 const SESSION_KEY = "kinecheck_secure_session_v1";
+const $ = (selector) => document.querySelector(selector);
 
 const elements = {
-  shell: document.querySelector("#access-shell"),
-  root: document.querySelector("#root"),
-  authPanel: document.querySelector("#auth-panel"),
-  authForm: document.querySelector("#auth-form"),
-  recoveryForm: document.querySelector("#recovery-form"),
-  loginTab: document.querySelector("#login-tab"),
-  signupTab: document.querySelector("#signup-tab"),
-  email: document.querySelector("#email"),
-  password: document.querySelector("#password"),
-  newPassword: document.querySelector("#new-password"),
-  submit: document.querySelector("#auth-submit"),
-  forgot: document.querySelector("#forgot-password"),
-  message: document.querySelector("#auth-message"),
-  progress: document.querySelector("#access-progress"),
-  progressMessage: document.querySelector("#progress-message"),
-  setupWarning: document.querySelector("#setup-warning"),
-  signOut: document.querySelector("#sign-out"),
+  shell: $("#access-shell"),
+  root: $("#root"),
+  authPanel: $("#auth-panel"),
+  authForm: $("#auth-form"),
+  recoveryForm: $("#recovery-form"),
+  loginTab: $("#login-tab"),
+  signupTab: $("#signup-tab"),
+  email: $("#email"),
+  password: $("#password"),
+  newPassword: $("#new-password"),
+  submit: $("#auth-submit"),
+  forgot: $("#forgot-password"),
+  message: $("#auth-message"),
+  progress: $("#access-progress"),
+  progressMessage: $("#progress-message"),
+  setupWarning: $("#setup-warning"),
+  signOut: $("#sign-out"),
 };
-
 let mode = "login";
 
+function resolvedCourseSlug() {
+  return new URLSearchParams(location.search).get("course") || CONFIG.courseSlug || "mas-alla-del-dolor";
+}
+
 function isConfigured() {
-  return (
-    CONFIG &&
-    /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(CONFIG.supabaseUrl) &&
-    CONFIG.supabaseAnonKey &&
-    !CONFIG.supabaseAnonKey.includes("REEMPLAZAR")
-  );
+  return CONFIG.supabaseUrl && CONFIG.supabaseAnonKey && CONFIG.courseKeyFunction;
 }
 
 function authHeaders(accessToken) {
-  const headers = {
-    apikey: CONFIG.supabaseAnonKey,
-    "Content-Type": "application/json",
-  };
+  const headers = { apikey: CONFIG.supabaseAnonKey, "Content-Type": "application/json" };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return headers;
 }
@@ -44,31 +40,15 @@ function authHeaders(accessToken) {
 async function request(path, options = {}) {
   const response = await fetch(`${CONFIG.supabaseUrl}${path}`, {
     ...options,
-    headers: {
-      ...authHeaders(options.accessToken),
-      ...(options.headers || {}),
-    },
+    headers: { ...authHeaders(options.accessToken), ...(options.headers || {}) },
   });
-
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(
-      data.msg || data.message || data.error_description || data.error || "Solicitud rechazada",
-    );
+    const error = new Error(data.msg || data.message || data.error_description || data.error || "Solicitud rechazada");
     error.status = response.status;
     throw error;
   }
   return data;
-}
-
-function setMode(nextMode) {
-  mode = nextMode;
-  const signup = mode === "signup";
-  elements.loginTab.classList.toggle("active", !signup);
-  elements.signupTab.classList.toggle("active", signup);
-  elements.submit.textContent = signup ? "Crear mi cuenta" : "Ingresar al curso";
-  elements.password.autocomplete = signup ? "new-password" : "current-password";
-  hideMessage();
 }
 
 function showMessage(text, kind = "info") {
@@ -84,48 +64,34 @@ function hideMessage() {
 
 function setBusy(busy, text = "Verificando tu acceso…") {
   elements.authPanel.hidden = busy;
-  elements.recoveryForm.hidden = true;
+  if (elements.recoveryForm) elements.recoveryForm.hidden = true;
   elements.progress.hidden = !busy;
   elements.progressMessage.textContent = text;
   elements.submit.disabled = busy;
 }
 
 function saveSession(session) {
-  const expiresAt =
-    session.expires_at || Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600);
+  const expiresAt = session.expires_at || Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600);
   localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, expires_at: expiresAt }));
 }
 
 function readSession() {
-  try {
-    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); }
+  catch { return null; }
 }
 
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-async function refreshSession(session) {
-  if (!session?.refresh_token) return null;
-  const fresh = await request("/auth/v1/token?grant_type=refresh_token", {
-    method: "POST",
-    body: JSON.stringify({ refresh_token: session.refresh_token }),
-  });
-  saveSession(fresh);
-  return fresh;
-}
+function clearSession() { localStorage.removeItem(SESSION_KEY); }
 
 async function validSession() {
   let session = readSession();
   if (!session) return null;
-
-  const expiresSoon = Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60;
-  if (expiresSoon) {
+  if (Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60) {
     try {
-      session = await refreshSession(session);
+      session = await request("/auth/v1/token?grant_type=refresh_token", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      });
+      saveSession(session);
     } catch {
       clearSession();
       return null;
@@ -135,20 +101,15 @@ async function validSession() {
 }
 
 async function fetchCourseSource(accessToken) {
-  const response = await fetch(
-    `${CONFIG.supabaseUrl}/functions/v1/${CONFIG.courseKeyFunction}`,
-    {
-      method: "POST",
-      headers: authHeaders(accessToken),
-      body: JSON.stringify({ courseSlug: CONFIG.courseSlug }),
-    },
-  );
-
+  const courseSlug = resolvedCourseSlug();
+  const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/${CONFIG.courseKeyFunction}`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ courseSlug }),
+  });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    const error = new Error(
-      data.message || "No encontramos una compra activa asociada a este correo.",
-    );
+    const error = new Error(data.message || "No encontramos una compra activa asociada a este correo.");
     error.status = response.status;
     throw error;
   }
@@ -156,22 +117,25 @@ async function fetchCourseSource(accessToken) {
 }
 
 async function launchCourse(source) {
-  elements.shell.hidden = true;
   elements.root.hidden = false;
-  elements.signOut.hidden = false;
-
-  const blob = new Blob([source], { type: "text/javascript" });
-  const moduleUrl = URL.createObjectURL(blob);
+  const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
   try {
     await import(moduleUrl);
+    elements.shell.hidden = true;
+    elements.signOut.hidden = false;
+  } catch (error) {
+    elements.root.hidden = true;
+    elements.shell.hidden = false;
+    elements.signOut.hidden = true;
+    throw new Error(`El contenido no pudo iniciarse: ${error.message}`);
   } finally {
     URL.revokeObjectURL(moduleUrl);
-    source = "";
   }
 }
 
 async function authorizeAndLaunch(session) {
-  setBusy(true, "Validando tu compra en KineCheck Academy…");
+  setBusy(true, "Validando tu acceso en KineCheck Academy…");
+  hideMessage();
   try {
     const source = await fetchCourseSource(session.access_token);
     elements.progressMessage.textContent = "Preparando el curso protegido…";
@@ -184,22 +148,14 @@ async function authorizeAndLaunch(session) {
   }
 }
 
-async function signIn(email, password) {
-  return request("/auth/v1/token?grant_type=password", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
-async function signUp(email, password) {
-  return request("/auth/v1/signup", {
-    method: "POST",
-    body: JSON.stringify({
-      email,
-      password,
-      data: { source: "kinecheck-secure-access" },
-    }),
-  });
+function setMode(nextMode) {
+  mode = nextMode;
+  const signup = mode === "signup";
+  elements.loginTab.classList.toggle("active", !signup);
+  elements.signupTab.classList.toggle("active", signup);
+  elements.submit.textContent = signup ? "Crear mi cuenta" : "Ingresar al curso";
+  elements.password.autocomplete = signup ? "new-password" : "current-password";
+  hideMessage();
 }
 
 elements.loginTab.addEventListener("click", () => setMode("login"));
@@ -208,131 +164,57 @@ elements.signupTab.addEventListener("click", () => setMode("signup"));
 elements.authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   hideMessage();
-
   const email = elements.email.value.trim().toLowerCase();
   const password = elements.password.value;
-  if (!email || password.length < 8) {
-    showMessage("Ingresa un correo válido y una contraseña de al menos 8 caracteres.", "error");
-    return;
-  }
-
-  elements.submit.disabled = true;
+  if (!email || password.length < 8) return showMessage("Ingresa un correo válido y una contraseña de al menos 8 caracteres.", "error");
   try {
-    if (mode === "signup") {
-      const result = await signUp(email, password);
-      if (!result.access_token) {
-        setMode("login");
-        elements.email.value = email;
-        showMessage(
-          "Cuenta creada. Revisa tu correo y confirma la dirección antes de ingresar.",
-        );
-        return;
-      }
-      saveSession(result);
-      await authorizeAndLaunch(result);
-      return;
+    const session = mode === "login"
+      ? await request("/auth/v1/token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password }) })
+      : await request("/auth/v1/signup", { method: "POST", body: JSON.stringify({ email, password, data: { source: "kinecheck-secure-access" } }) });
+    if (!session.access_token) {
+      setMode("login");
+      elements.email.value = email;
+      return showMessage("Cuenta creada. Revisa tu correo y confirma la dirección antes de ingresar.");
     }
-
-    const session = await signIn(email, password);
     saveSession(session);
     await authorizeAndLaunch(session);
   } catch (error) {
-    showMessage(error.message, "error");
-  } finally {
-    elements.submit.disabled = false;
-  }
-});
-
-elements.forgot.addEventListener("click", async () => {
-  hideMessage();
-  const email = elements.email.value.trim().toLowerCase();
-  if (!email) {
-    showMessage("Escribe primero el correo utilizado en tu compra.", "error");
-    return;
-  }
-  try {
-    await request("/auth/v1/recover", {
-      method: "POST",
-      body: JSON.stringify({ email, redirect_to: window.location.href.split("#")[0] }),
-    });
-    showMessage("Te enviamos un enlace para restablecer tu contraseña.");
-  } catch (error) {
+    setBusy(false);
     showMessage(error.message, "error");
   }
 });
 
-elements.recoveryForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const password = elements.newPassword.value;
-  const session = readSession();
-  if (!session?.access_token || password.length < 8) {
-    showMessage("La contraseña debe tener al menos 8 caracteres.", "error");
-    return;
-  }
-  try {
-    await request("/auth/v1/user", {
-      method: "PUT",
-      accessToken: session.access_token,
-      body: JSON.stringify({ password }),
-    });
-    window.location.hash = "";
-    elements.recoveryForm.hidden = true;
-    elements.authPanel.hidden = false;
-    showMessage("Contraseña actualizada. Ya puedes ingresar.");
-  } catch (error) {
-    showMessage(error.message, "error");
-  }
-});
+if (elements.forgot) {
+  elements.forgot.addEventListener("click", async () => {
+    hideMessage();
+    const email = elements.email.value.trim().toLowerCase();
+    if (!email) return showMessage("Escribe primero el correo utilizado en tu compra.", "error");
+    try {
+      await request("/auth/v1/recover", {
+        method: "POST",
+        body: JSON.stringify({ email, redirect_to: location.href.split("#")[0] }),
+      });
+      showMessage("Te enviamos un enlace para restablecer tu contraseña.");
+    } catch (error) {
+      showMessage(error.message, "error");
+    }
+  });
+}
 
 elements.signOut.addEventListener("click", async () => {
   const session = readSession();
   if (session?.access_token) {
-    await request("/auth/v1/logout", {
-      method: "POST",
-      accessToken: session.access_token,
-    }).catch(() => {});
+    await request("/auth/v1/logout", { method: "POST", accessToken: session.access_token }).catch(() => {});
   }
   clearSession();
-  window.location.reload();
+  location.reload();
 });
 
-function consumeAuthHash() {
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  const type = params.get("type");
-  if (!params.get("access_token") || !type) return null;
-
-  const session = {
-    access_token: params.get("access_token"),
-    refresh_token: params.get("refresh_token"),
-    expires_in: Number(params.get("expires_in") || 3600),
-    token_type: params.get("token_type") || "bearer",
-  };
-  saveSession(session);
-  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-
-  if (type === "recovery") {
-    elements.authPanel.hidden = true;
-    elements.recoveryForm.hidden = false;
-    return "recovery";
-  }
-
-  return "session";
-}
-
-async function start() {
+(async function start() {
   if (!isConfigured()) {
     elements.setupWarning.hidden = false;
-    elements.authForm.querySelectorAll("input, button").forEach((element) => {
-      element.disabled = true;
-    });
     return;
   }
-
-  const authHash = consumeAuthHash();
-  if (authHash === "recovery") return;
-
   const session = await validSession();
   if (session) await authorizeAndLaunch(session);
-}
-
-start();
+})();
