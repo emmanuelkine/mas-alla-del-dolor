@@ -24,7 +24,7 @@ const elements = {
 let mode = "login";
 
 function resolvedCourseSlug() {
-  return new URLSearchParams(location.search).get("course") || CONFIG.courseSlug || "mas-alla-del-dolor";
+  return String(CONFIG.courseSlug || "mas-alla-del-dolor").trim();
 }
 
 function isConfigured() {
@@ -82,22 +82,42 @@ function readSession() {
 
 function clearSession() { localStorage.removeItem(SESSION_KEY); }
 
+async function validateIdentity(session) {
+  const user = await request("/auth/v1/user", {
+    method: "GET",
+    accessToken: session.access_token,
+  });
+  const verified = { ...session, user };
+  saveSession(verified);
+  return verified;
+}
+
 async function validSession() {
   let session = readSession();
-  if (!session) return null;
-  if (Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60) {
+  if (!session?.access_token) return null;
+
+  try {
+    if (Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60) {
+      session = await request("/auth/v1/token?grant_type=refresh_token", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      });
+      saveSession(session);
+    }
+    return await validateIdentity(session);
+  } catch {
     try {
       session = await request("/auth/v1/token?grant_type=refresh_token", {
         method: "POST",
         body: JSON.stringify({ refresh_token: session.refresh_token }),
       });
       saveSession(session);
+      return await validateIdentity(session);
     } catch {
       clearSession();
       return null;
     }
   }
-  return session;
 }
 
 async function fetchCourseSource(accessToken) {
@@ -113,17 +133,28 @@ async function fetchCourseSource(accessToken) {
     error.status = response.status;
     throw error;
   }
-  return response.text();
+  return {
+    courseSlug,
+    source: await response.text(),
+  };
 }
 
-async function launchCourse(source) {
+async function launchCourse(source, session, courseSlug) {
   elements.root.hidden = false;
   const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
   try {
     await import(moduleUrl);
+    if (!window.KineCheckWatermark) {
+      throw new Error("No fue posible activar la protección de uso personal.");
+    }
+    await window.KineCheckWatermark.showVerifiedBuyer({
+      user: session.user,
+      licenseScopes: [courseSlug],
+    });
     elements.shell.hidden = true;
     elements.signOut.hidden = false;
   } catch (error) {
+    window.KineCheckWatermark?.hide();
     elements.root.hidden = true;
     elements.shell.hidden = false;
     elements.signOut.hidden = true;
@@ -137,10 +168,11 @@ async function authorizeAndLaunch(session) {
   setBusy(true, "Validando tu acceso en KineCheck Academy…");
   hideMessage();
   try {
-    const source = await fetchCourseSource(session.access_token);
+    const course = await fetchCourseSource(session.access_token);
     elements.progressMessage.textContent = "Preparando el curso protegido…";
-    await launchCourse(source);
+    await launchCourse(course.source, session, course.courseSlug);
   } catch (error) {
+    window.KineCheckWatermark?.hide();
     setBusy(false);
     if (error.status === 401) clearSession();
     const support = CONFIG.supportEmail ? ` Si necesitas ayuda, escribe a ${CONFIG.supportEmail}.` : "";
@@ -168,7 +200,7 @@ elements.authForm.addEventListener("submit", async (event) => {
   const password = elements.password.value;
   if (!email || password.length < 8) return showMessage("Ingresa un correo válido y una contraseña de al menos 8 caracteres.", "error");
   try {
-    const session = mode === "login"
+    let session = mode === "login"
       ? await request("/auth/v1/token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password }) })
       : await request("/auth/v1/signup", { method: "POST", body: JSON.stringify({ email, password, data: { source: "kinecheck-secure-access" } }) });
     if (!session.access_token) {
@@ -177,6 +209,7 @@ elements.authForm.addEventListener("submit", async (event) => {
       return showMessage("Cuenta creada. Revisa tu correo y confirma la dirección antes de ingresar.");
     }
     saveSession(session);
+    session = await validateIdentity(session);
     await authorizeAndLaunch(session);
   } catch (error) {
     setBusy(false);
@@ -202,6 +235,7 @@ if (elements.forgot) {
 }
 
 elements.signOut.addEventListener("click", async () => {
+  window.KineCheckWatermark?.hide();
   const session = readSession();
   if (session?.access_token) {
     await request("/auth/v1/logout", { method: "POST", accessToken: session.access_token }).catch(() => {});
