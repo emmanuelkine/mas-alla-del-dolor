@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Acceso protegido al curso Más Allá del Dolor de KineCheck Academy.">
+  <meta name="description" content="Acceso protegido al curso Más Allá del Dolor de KineCheck.">
   <meta name="theme-color" content="#11152b">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -12,13 +12,14 @@
   <title>Más Allá del Dolor | Acceso seguro</title>
   <link rel="stylesheet" href="./auth.css?v=20260727">
   <link rel="stylesheet" href="./assets/course.css?v=20260727">
+  <script src="./sso-handoff.js?v=20260731-sso1"></script>
   <script src="./config.js?v=20260727" defer></script>
-  <script type="module" src="./auth-gate.js?v=20260727"></script>
+  <script type="module" src="./auth-gate.js?v=20260731-sso1"></script>
 </head>
 <body>
   <main id="access-shell" class="access-shell">
     <section class="access-card" aria-labelledby="access-title">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">K</span><div><strong>KineCheck Academy</strong><span>Acceso clínico protegido</span></div></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">K</span><div><strong>KineCheck</strong><span>Acceso clínico protegido</span></div></div>
       <div class="course-heading"><span class="eyebrow">CURSO INTERACTIVO</span><h1 id="access-title">Más allá del dolor</h1><p>Evaluación musculoesquelética integral</p></div>
       <div id="setup-warning" class="notice notice-warning" hidden>La protección todavía necesita conectarse al servicio de acceso.</div>
       <div id="auth-panel">
@@ -43,7 +44,7 @@
       </form>
       <div id="access-progress" class="access-progress" hidden aria-live="polite"><span class="spinner" aria-hidden="true"></span><p id="progress-message">Verificando tu acceso…</p></div>
       <div id="auth-message" class="notice" hidden aria-live="polite"></div>
-      <p class="access-help">Debes usar el mismo correo con el que realizaste la compra en Hotmart.</p>
+      <p class="access-help">Al ingresar desde KineCheck 4.0, tu sesión se reconoce automáticamente.</p>
     </section>
   </main>
   <div id="root" hidden></div>
