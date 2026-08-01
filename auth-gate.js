@@ -84,8 +84,13 @@ function clearSession() { localStorage.removeItem(SESSION_KEY); }
 
 async function validSession() {
   let session = readSession();
-  if (!session) return null;
-  if (Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60) {
+  if (!session?.access_token) return null;
+
+  if (Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 30) {
+    if (!session.refresh_token) {
+      clearSession();
+      return null;
+    }
     try {
       session = await request("/auth/v1/token?grant_type=refresh_token", {
         method: "POST",
@@ -134,7 +139,7 @@ async function launchCourse(source) {
 }
 
 async function authorizeAndLaunch(session) {
-  setBusy(true, "Validando tu acceso en KineCheck Academy…");
+  setBusy(true, "Validando tu acceso en KineCheck…");
   hideMessage();
   try {
     const source = await fetchCourseSource(session.access_token);
@@ -203,7 +208,7 @@ if (elements.forgot) {
 
 elements.signOut.addEventListener("click", async () => {
   const session = readSession();
-  if (session?.access_token) {
+  if (session?.access_token && !session.handoff_access_only) {
     await request("/auth/v1/logout", { method: "POST", accessToken: session.access_token }).catch(() => {});
   }
   clearSession();
