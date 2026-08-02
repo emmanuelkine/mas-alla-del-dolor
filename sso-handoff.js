@@ -39,14 +39,6 @@
     window.__KINECHECK_SSO_RECEIVED__ = true;
   }
 
-  function validStoredSession() {
-    try {
-      return validSession(JSON.parse(localStorage.getItem(SESSION_KEY) || "null"));
-    } catch {
-      return false;
-    }
-  }
-
   function sessionFromWindowName() {
     if (!window.name) return null;
     try {
@@ -64,7 +56,11 @@
     return;
   }
 
-  if (validStoredSession() || !window.opener) return;
+  if (!window.opener) return;
+
+  // Al abrir desde Academy, la sesión actual siempre prevalece sobre
+  // cualquier sesión antigua almacenada previamente en este dominio.
+  localStorage.removeItem(SESSION_KEY);
 
   let completed = false;
   const finish = () => {
