@@ -1,23 +1,56 @@
 (() => {
   const SESSION_KEY = "kinecheck_secure_session_v1";
   const HANDOFF_TYPE = "kinecheck-sso-v3-access-only";
+  const READY_TYPE = "kinecheck-sso-ready";
+  const EXPECTED_PRODUCT = "mas-alla-del-dolor";
   const MAX_AGE_MS = 120000;
+  const ALLOWED_ACADEMY_ORIGINS = new Set([
+    "https://kinecheck-comunicacion-clinica.pages.dev",
+    "https://emmanuelkine.github.io",
+  ]);
 
   function validSession(session) {
-    return Boolean(session?.access_token);
+    if (!session?.access_token) return false;
+    const expiresAt = Number(session.expires_at || 0);
+    const now = Math.floor(Date.now() / 1000);
+    return !expiresAt || expiresAt > now + 30;
+  }
+
+  function normalizeHandoff(handoff) {
+    const issuedAt = Number(handoff?.issuedAt);
+    const session = handoff?.session;
+    if (
+      handoff?.type !== HANDOFF_TYPE
+      || handoff?.product !== EXPECTED_PRODUCT
+      || !Number.isFinite(issuedAt)
+      || Math.abs(Date.now() - issuedAt) > MAX_AGE_MS
+      || !validSession(session)
+    ) return null;
+
+    return {
+      ...session,
+      handoff_access_only: true,
+    };
+  }
+
+  function saveSession(session) {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    window.__KINECHECK_SSO_RECEIVED__ = true;
+  }
+
+  function validStoredSession() {
+    try {
+      return validSession(JSON.parse(localStorage.getItem(SESSION_KEY) || "null"));
+    } catch {
+      return false;
+    }
   }
 
   function sessionFromWindowName() {
     if (!window.name) return null;
     try {
-      const handoff = JSON.parse(window.name);
-      if (
-        handoff?.type !== HANDOFF_TYPE
-        || !Number.isFinite(Number(handoff.issuedAt))
-        || Math.abs(Date.now() - Number(handoff.issuedAt)) > MAX_AGE_MS
-        || !validSession(handoff.session)
-      ) return null;
-      return { ...handoff.session, handoff_access_only: true };
+      return normalizeHandoff(JSON.parse(window.name));
     } catch {
       return null;
     } finally {
@@ -25,10 +58,45 @@
     }
   }
 
-  const session = sessionFromWindowName();
-  if (!session) return;
+  const directSession = sessionFromWindowName();
+  if (directSession) {
+    saveSession(directSession);
+    return;
+  }
 
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  window.__KINECHECK_SSO_RECEIVED__ = true;
+  if (validStoredSession() || !window.opener) return;
+
+  let completed = false;
+  const finish = () => {
+    window.removeEventListener("message", onMessage);
+    window.clearTimeout(timeoutId);
+  };
+
+  const onMessage = (event) => {
+    if (
+      completed
+      || event.source !== window.opener
+      || !ALLOWED_ACADEMY_ORIGINS.has(event.origin)
+    ) return;
+
+    const session = normalizeHandoff(event.data);
+    if (!session) return;
+
+    completed = true;
+    saveSession(session);
+    finish();
+    location.reload();
+  };
+
+  window.addEventListener("message", onMessage);
+  const timeoutId = window.setTimeout(finish, 10000);
+
+  try {
+    window.opener.postMessage({
+      type: READY_TYPE,
+      product: EXPECTED_PRODUCT,
+    }, "*");
+  } catch {
+    finish();
+  }
 })();
