@@ -1,5 +1,5 @@
 const CONFIG = window.KINECHECK_CONFIG || {};
-const SESSION_KEY = "kinecheck_secure_session_v1";
+const SESSION_KEY = "kinecheck_course_session_v1:mas-alla-del-dolor";
 const $ = (selector) => document.querySelector(selector);
 
 const elements = {

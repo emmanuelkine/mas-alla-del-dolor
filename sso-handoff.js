@@ -1,12 +1,15 @@
 (() => {
-  const SESSION_KEY = "kinecheck_secure_session_v1";
+  const SESSION_KEY = "kinecheck_course_session_v1:mas-alla-del-dolor";
   const HANDOFF_TYPE = "kinecheck-sso-v3-access-only";
   const READY_TYPE = "kinecheck-sso-ready";
+  const ACCEPTED_TYPE = "kinecheck-sso-accepted";
   const EXPECTED_PRODUCT = "mas-alla-del-dolor";
   const MAX_AGE_MS = 120000;
   const ALLOWED_ACADEMY_ORIGINS = new Set([
     "https://kinecheck-comunicacion-clinica.pages.dev",
     "https://emmanuelkine.github.io",
+    "https://kinecheck.cl",
+    "https://www.kinecheck.cl",
   ]);
 
   function validSession(session) {
@@ -39,6 +42,18 @@
     window.__KINECHECK_SSO_RECEIVED__ = true;
   }
 
+  function notifyAccepted() {
+    if (!window.opener) return;
+    try {
+      window.opener.postMessage({
+        type: ACCEPTED_TYPE,
+        product: EXPECTED_PRODUCT,
+      }, "*");
+    } catch {
+      // La sesión ya quedó guardada; la notificación solo cierra el intercambio.
+    }
+  }
+
   function sessionFromWindowName() {
     if (!window.name) return null;
     try {
@@ -53,6 +68,7 @@
   const directSession = sessionFromWindowName();
   if (directSession) {
     saveSession(directSession);
+    notifyAccepted();
     return;
   }
 
@@ -80,6 +96,7 @@
 
     completed = true;
     saveSession(session);
+    notifyAccepted();
     finish();
     location.reload();
   };
