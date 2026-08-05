@@ -1,5 +1,8 @@
 (() => {
-  const SESSION_KEY = "kinecheck_course_session_v1:mas-alla-del-dolor";
+  "use strict";
+
+  const SESSION_KEY = "kinecheck_course_session_v2:mas-alla-del-dolor";
+  const LEGACY_SESSION_KEY = "kinecheck_course_session_v1:mas-alla-del-dolor";
   const HANDOFF_TYPE = "kinecheck-sso-v3-access-only";
   const READY_TYPE = "kinecheck-sso-ready";
   const ACCEPTED_TYPE = "kinecheck-sso-accepted";
@@ -31,24 +34,38 @@
     ) return null;
 
     return {
-      ...session,
+      access_token: String(session.access_token),
+      expires_at: Number(session.expires_at || 0) || null,
+      expires_in: Number(session.expires_in || 0) || null,
+      token_type: session.token_type || "bearer",
       handoff_access_only: true,
+      product: EXPECTED_PRODUCT,
     };
   }
 
+  function clearOldSessions() {
+    try {
+      localStorage.removeItem(LEGACY_SESSION_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(LEGACY_SESSION_KEY);
+    } catch {
+      // Limpieza de mejor esfuerzo.
+    }
+  }
+
   function saveSession(session) {
-    localStorage.removeItem(SESSION_KEY);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    clearOldSessions();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
     window.__KINECHECK_SSO_RECEIVED__ = true;
   }
 
-  function notifyAccepted() {
+  function notifyAccepted(targetOrigin = "*") {
     if (!window.opener) return;
     try {
       window.opener.postMessage({
         type: ACCEPTED_TYPE,
         product: EXPECTED_PRODUCT,
-      }, "*");
+      }, targetOrigin);
     } catch {
       // La sesión ya quedó guardada; la notificación solo cierra el intercambio.
     }
@@ -72,13 +89,14 @@
     return;
   }
 
-  if (!window.opener) return;
+  if (!window.opener) {
+    clearOldSessions();
+    return;
+  }
 
-  // Al abrir desde Academy, la sesión actual siempre prevalece sobre
-  // cualquier sesión antigua almacenada previamente en este dominio.
-  localStorage.removeItem(SESSION_KEY);
-
+  clearOldSessions();
   let completed = false;
+
   const finish = () => {
     window.removeEventListener("message", onMessage);
     window.clearTimeout(timeoutId);
@@ -96,7 +114,7 @@
 
     completed = true;
     saveSession(session);
-    notifyAccepted();
+    notifyAccepted(event.origin);
     finish();
     location.reload();
   };
