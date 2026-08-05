@@ -1,137 +1,175 @@
 const CONFIG = window.KINECHECK_CONFIG || {};
-const SESSION_KEY = "kinecheck_course_session_v1:mas-alla-del-dolor";
+const EXPECTED_COURSE = "mas-alla-del-dolor";
+const SESSION_KEY = "kinecheck_course_session_v2:mas-alla-del-dolor";
+const LEGACY_SESSION_KEY = "kinecheck_course_session_v1:mas-alla-del-dolor";
 const $ = (selector) => document.querySelector(selector);
 
 const elements = {
   shell: $("#access-shell"),
   root: $("#root"),
-  authPanel: $("#auth-panel"),
-  authForm: $("#auth-form"),
-  recoveryForm: $("#recovery-form"),
-  loginTab: $("#login-tab"),
-  signupTab: $("#signup-tab"),
-  email: $("#email"),
-  password: $("#password"),
-  newPassword: $("#new-password"),
-  submit: $("#auth-submit"),
-  forgot: $("#forgot-password"),
   message: $("#auth-message"),
   progress: $("#access-progress"),
   progressMessage: $("#progress-message"),
-  setupWarning: $("#setup-warning"),
+  ecosystemEntry: $("#ecosystem-entry"),
   signOut: $("#sign-out"),
 };
-let mode = "login";
 
-function resolvedCourseSlug() {
-  return new URLSearchParams(location.search).get("course") || CONFIG.courseSlug || "mas-alla-del-dolor";
-}
-
-function isConfigured() {
-  return CONFIG.supabaseUrl && CONFIG.supabaseAnonKey && CONFIG.courseKeyFunction;
+function configuredCorrectly() {
+  return Boolean(
+    CONFIG.supabaseUrl
+    && CONFIG.supabaseAnonKey
+    && CONFIG.courseKeyFunction
+    && CONFIG.courseSlug === EXPECTED_COURSE,
+  );
 }
 
 function authHeaders(accessToken) {
-  const headers = { apikey: CONFIG.supabaseAnonKey, "Content-Type": "application/json" };
+  const headers = {
+    apikey: CONFIG.supabaseAnonKey,
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+  };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return headers;
+}
+
+function normalizeSession(value) {
+  if (!value?.access_token) return null;
+  const expiresAt = Number(value.expires_at || 0);
+  if (expiresAt && expiresAt <= Math.floor(Date.now() / 1000) + 15) return null;
+  if (value.product && value.product !== EXPECTED_COURSE) return null;
+  return {
+    access_token: String(value.access_token),
+    expires_at: expiresAt || null,
+    expires_in: Number(value.expires_in || 0) || null,
+    token_type: value.token_type || "bearer",
+    handoff_access_only: true,
+    product: EXPECTED_COURSE,
+  };
+}
+
+function readJson(storage, key) {
+  try {
+    return normalizeSession(JSON.parse(storage.getItem(key) || "null"));
+  } catch {
+    return null;
+  }
+}
+
+function clearSessions() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(LEGACY_SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+  } catch {
+    // Limpieza de mejor esfuerzo.
+  }
+}
+
+function readSession() {
+  const temporary = readJson(sessionStorage, SESSION_KEY);
+  if (temporary) return temporary;
+
+  const legacy = readJson(localStorage, LEGACY_SESSION_KEY);
+  if (!legacy) return null;
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(legacy));
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+  } catch {
+    // La sesión sigue siendo utilizable durante esta carga.
+  }
+  return legacy;
 }
 
 async function request(path, options = {}) {
   const response = await fetch(`${CONFIG.supabaseUrl}${path}`, {
     ...options,
-    headers: { ...authHeaders(options.accessToken), ...(options.headers || {}) },
+    cache: "no-store",
+    headers: {
+      ...authHeaders(options.accessToken),
+      ...(options.headers || {}),
+    },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.msg || data.message || data.error_description || data.error || "Solicitud rechazada");
+    const error = new Error(
+      data.message || data.error_description || data.msg || data.error || "Solicitud rechazada",
+    );
     error.status = response.status;
     throw error;
   }
   return data;
 }
 
-function showMessage(text, kind = "info") {
+function setBusy(visible, text = "Verificando tu licencia de Más allá del dolor…") {
+  if (elements.progress) elements.progress.hidden = !visible;
+  if (elements.progressMessage) elements.progressMessage.textContent = text;
+}
+
+function showMessage(text, error = false) {
+  if (!elements.message) return;
   elements.message.textContent = text;
-  elements.message.className = `notice${kind === "error" ? " notice-error" : ""}`;
+  elements.message.className = error ? "notice notice-error" : "notice";
   elements.message.hidden = false;
 }
 
-function hideMessage() {
-  elements.message.hidden = true;
-  elements.message.textContent = "";
-}
-
-function setBusy(busy, text = "Verificando tu acceso…") {
-  elements.authPanel.hidden = busy;
-  if (elements.recoveryForm) elements.recoveryForm.hidden = true;
-  elements.progress.hidden = !busy;
-  elements.progressMessage.textContent = text;
-  elements.submit.disabled = busy;
-}
-
-function saveSession(session) {
-  const expiresAt = session.expires_at || Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600);
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, expires_at: expiresAt }));
-}
-
-function readSession() {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); }
-  catch { return null; }
-}
-
-function clearSession() { localStorage.removeItem(SESSION_KEY); }
-
-async function validSession() {
-  let session = readSession();
-  if (!session?.access_token) return null;
-
-  if (Number(session.expires_at || 0) <= Math.floor(Date.now() / 1000) + 30) {
-    if (!session.refresh_token) {
-      clearSession();
-      return null;
-    }
-    try {
-      session = await request("/auth/v1/token?grant_type=refresh_token", {
-        method: "POST",
-        body: JSON.stringify({ refresh_token: session.refresh_token }),
-      });
-      saveSession(session);
-    } catch {
-      clearSession();
-      return null;
-    }
+function showEcosystemEntry(text = "Inicia sesión una sola vez en KineCheck y abre este curso desde tu biblioteca.") {
+  setBusy(false);
+  if (elements.ecosystemEntry) {
+    const copy = elements.ecosystemEntry.querySelector("p");
+    if (copy) copy.textContent = text;
+    elements.ecosystemEntry.hidden = false;
   }
-  return session;
+  if (elements.shell) elements.shell.hidden = false;
+  if (elements.root) elements.root.hidden = true;
+  if (elements.signOut) elements.signOut.hidden = true;
+}
+
+async function validateIdentity(session) {
+  const user = await request("/auth/v1/user", {
+    method: "GET",
+    accessToken: session.access_token,
+  });
+  return { ...session, user };
 }
 
 async function fetchCourseSource(accessToken) {
-  const courseSlug = resolvedCourseSlug();
   const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/${CONFIG.courseKeyFunction}`, {
     method: "POST",
+    cache: "no-store",
     headers: authHeaders(accessToken),
-    body: JSON.stringify({ courseSlug }),
+    body: JSON.stringify({ courseSlug: EXPECTED_COURSE }),
   });
+
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    const error = new Error(data.message || "No encontramos una compra activa asociada a este correo.");
+    const error = new Error(
+      data.message || "Tu sesión está activa, pero esta cuenta no tiene una licencia de Más allá del dolor.",
+    );
     error.status = response.status;
     throw error;
   }
+
   return response.text();
 }
 
-async function launchCourse(source) {
+async function launchCourse(source, session) {
+  if (!elements.root || !elements.shell) throw new Error("La pantalla del curso no está disponible.");
   elements.root.hidden = false;
   const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+
   try {
     await import(moduleUrl);
     elements.shell.hidden = true;
-    elements.signOut.hidden = false;
+    if (elements.signOut) elements.signOut.hidden = false;
+    window.dispatchEvent(new CustomEvent("kinecheck:course-authorized", {
+      detail: { courseSlug: EXPECTED_COURSE, email: session.user?.email || "" },
+    }));
   } catch (error) {
     elements.root.hidden = true;
     elements.shell.hidden = false;
-    elements.signOut.hidden = true;
+    if (elements.signOut) elements.signOut.hidden = true;
     throw new Error(`El contenido no pudo iniciarse: ${error.message}`);
   } finally {
     URL.revokeObjectURL(moduleUrl);
@@ -139,87 +177,50 @@ async function launchCourse(source) {
 }
 
 async function authorizeAndLaunch(session) {
-  setBusy(true, "Validando tu acceso en KineCheck…");
-  hideMessage();
+  setBusy(true);
+  if (elements.message) elements.message.hidden = true;
+  if (elements.ecosystemEntry) elements.ecosystemEntry.hidden = true;
+
   try {
-    const source = await fetchCourseSource(session.access_token);
-    elements.progressMessage.textContent = "Preparando el curso protegido…";
-    await launchCourse(source);
+    const verified = await validateIdentity(session);
+    const source = await fetchCourseSource(verified.access_token);
+    setBusy(true, "Preparando el curso protegido…");
+    await launchCourse(source, verified);
   } catch (error) {
+    clearSessions();
     setBusy(false);
-    if (error.status === 401) clearSession();
-    const support = CONFIG.supportEmail ? ` Si necesitas ayuda, escribe a ${CONFIG.supportEmail}.` : "";
-    showMessage(`${error.message}${support}`, "error");
+    const denied = error.status === 403;
+    showMessage(
+      denied
+        ? `${error.message} Solo se habilita el producto comprado por esta cuenta.`
+        : `${error.message} Vuelve a KineCheck y abre el curso nuevamente.`,
+      true,
+    );
+    showEcosystemEntry(
+      denied
+        ? "Esta cuenta no tiene una licencia activa de Más allá del dolor. Regresa a tu biblioteca para abrir únicamente tus productos disponibles."
+        : "La sesión terminó. Regresa a KineCheck, inicia sesión una vez y vuelve a abrir el curso.",
+    );
   }
 }
 
-function setMode(nextMode) {
-  mode = nextMode;
-  const signup = mode === "signup";
-  elements.loginTab.classList.toggle("active", !signup);
-  elements.signupTab.classList.toggle("active", signup);
-  elements.submit.textContent = signup ? "Crear mi cuenta" : "Ingresar al curso";
-  elements.password.autocomplete = signup ? "new-password" : "current-password";
-  hideMessage();
-}
-
-elements.loginTab.addEventListener("click", () => setMode("login"));
-elements.signupTab.addEventListener("click", () => setMode("signup"));
-
-elements.authForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  hideMessage();
-  const email = elements.email.value.trim().toLowerCase();
-  const password = elements.password.value;
-  if (!email || password.length < 8) return showMessage("Ingresa un correo válido y una contraseña de al menos 8 caracteres.", "error");
-  try {
-    const session = mode === "login"
-      ? await request("/auth/v1/token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password }) })
-      : await request("/auth/v1/signup", { method: "POST", body: JSON.stringify({ email, password, data: { source: "kinecheck-secure-access" } }) });
-    if (!session.access_token) {
-      setMode("login");
-      elements.email.value = email;
-      return showMessage("Cuenta creada. Revisa tu correo y confirma la dirección antes de ingresar.");
-    }
-    saveSession(session);
-    await authorizeAndLaunch(session);
-  } catch (error) {
-    setBusy(false);
-    showMessage(error.message, "error");
-  }
-});
-
-if (elements.forgot) {
-  elements.forgot.addEventListener("click", async () => {
-    hideMessage();
-    const email = elements.email.value.trim().toLowerCase();
-    if (!email) return showMessage("Escribe primero el correo utilizado en tu compra.", "error");
-    try {
-      await request("/auth/v1/recover", {
-        method: "POST",
-        body: JSON.stringify({ email, redirect_to: location.href.split("#")[0] }),
-      });
-      showMessage("Te enviamos un enlace para restablecer tu contraseña.");
-    } catch (error) {
-      showMessage(error.message, "error");
-    }
-  });
-}
-
-elements.signOut.addEventListener("click", async () => {
-  const session = readSession();
-  if (session?.access_token && !session.handoff_access_only) {
-    await request("/auth/v1/logout", { method: "POST", accessToken: session.access_token }).catch(() => {});
-  }
-  clearSession();
-  location.reload();
+elements.signOut?.addEventListener("click", () => {
+  clearSessions();
+  location.replace("https://kinecheck.cl/academy/#biblioteca");
 });
 
 (async function start() {
-  if (!isConfigured()) {
-    elements.setupWarning.hidden = false;
+  if (!configuredCorrectly()) {
+    showMessage("La configuración de acceso de este curso no coincide con el producto esperado.", true);
+    showEcosystemEntry();
     return;
   }
-  const session = await validSession();
-  if (session) await authorizeAndLaunch(session);
+
+  const session = readSession();
+  if (!session) {
+    showEcosystemEntry();
+    return;
+  }
+
+  await authorizeAndLaunch(session);
 })();
