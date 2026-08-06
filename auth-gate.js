@@ -11,8 +11,11 @@ const elements = {
   progress: $("#access-progress"),
   progressMessage: $("#progress-message"),
   ecosystemEntry: $("#ecosystem-entry"),
+  ecosystemLink: $("#ecosystem-entry .ecosystem-entry-link"),
+  retry: $("#ecosystem-entry .ecosystem-retry"),
   signOut: $("#sign-out"),
 };
+let starting = false;
 
 function configuredCorrectly() {
   return Boolean(
@@ -27,7 +30,6 @@ function authHeaders(accessToken) {
   const headers = {
     apikey: CONFIG.supabaseAnonKey,
     "Content-Type": "application/json",
-    "Cache-Control": "no-store",
   };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return headers;
@@ -49,11 +51,8 @@ function normalizeSession(value) {
 }
 
 function readJson(storage, key) {
-  try {
-    return normalizeSession(JSON.parse(storage.getItem(key) || "null"));
-  } catch {
-    return null;
-  }
+  try { return normalizeSession(JSON.parse(storage.getItem(key) || "null")); }
+  catch { return null; }
 }
 
 function clearSessions() {
@@ -62,30 +61,42 @@ function clearSessions() {
     sessionStorage.removeItem(LEGACY_SESSION_KEY);
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(LEGACY_SESSION_KEY);
-  } catch {
-    // Limpieza de mejor esfuerzo.
-  }
+  } catch { /* limpieza de mejor esfuerzo */ }
 }
 
 function readSession() {
-  const temporary = readJson(sessionStorage, SESSION_KEY);
-  if (temporary) return temporary;
+  return readJson(sessionStorage, SESSION_KEY) || readJson(localStorage, LEGACY_SESSION_KEY);
+}
 
-  const legacy = readJson(localStorage, LEGACY_SESSION_KEY);
-  if (!legacy) return null;
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(legacy));
-    localStorage.removeItem(LEGACY_SESSION_KEY);
-  } catch {
-    // La sesión sigue siendo utilizable durante esta carga.
+async function waitForSession(timeoutMs = 5000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const session = readSession();
+    if (session) return session;
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  return legacy;
+  return null;
+}
+
+async function fetchWithTimeout(url, options = {}, timeout = 15000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, cache: "no-store", signal: controller.signal });
+  } catch (error) {
+    const network = new Error(error?.name === "AbortError"
+      ? "La conexión tardó demasiado. Intenta nuevamente."
+      : "No pudimos conectar con KineCheck. Intenta nuevamente.");
+    network.code = "NETWORK_ERROR";
+    throw network;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${CONFIG.supabaseUrl}${path}`, {
+  const response = await fetchWithTimeout(`${CONFIG.supabaseUrl}${path}`, {
     ...options,
-    cache: "no-store",
     headers: {
       ...authHeaders(options.accessToken),
       ...(options.headers || {}),
@@ -93,9 +104,7 @@ async function request(path, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(
-      data.message || data.error_description || data.msg || data.error || "Solicitud rechazada",
-    );
+    const error = new Error(data.message || data.error_description || data.msg || data.error || "Solicitud rechazada");
     error.status = response.status;
     throw error;
   }
@@ -114,13 +123,25 @@ function showMessage(text, error = false) {
   elements.message.hidden = false;
 }
 
-function showEcosystemEntry(text = "Inicia sesión una sola vez en KineCheck y abre este curso desde tu biblioteca.") {
-  setBusy(false);
-  if (elements.ecosystemEntry) {
-    const copy = elements.ecosystemEntry.querySelector("p");
-    if (copy) copy.textContent = text;
-    elements.ecosystemEntry.hidden = false;
+function configureEntry({ copy, showLibrary = true, showRetry = false } = {}) {
+  if (!elements.ecosystemEntry) return;
+  const paragraph = elements.ecosystemEntry.querySelector("p");
+  if (paragraph && copy) paragraph.textContent = copy;
+  elements.ecosystemEntry.hidden = false;
+  if (elements.ecosystemLink) {
+    elements.ecosystemLink.hidden = !showLibrary;
+    elements.ecosystemLink.textContent = "Volver a mi biblioteca";
+    elements.ecosystemLink.href = "https://kinecheck.cl/academy/#biblioteca";
   }
+  if (elements.retry) {
+    elements.retry.hidden = !showRetry;
+    elements.retry.textContent = "Reintentar acceso";
+  }
+}
+
+function showEntry(text = "Abre este curso desde tu biblioteca KineCheck.") {
+  setBusy(false);
+  configureEntry({ copy: text, showLibrary: true, showRetry: false });
   if (elements.shell) elements.shell.hidden = false;
   if (elements.root) elements.root.hidden = true;
   if (elements.signOut) elements.signOut.hidden = true;
@@ -135,9 +156,8 @@ async function validateIdentity(session) {
 }
 
 async function fetchCourseSource(accessToken) {
-  const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/${CONFIG.courseKeyFunction}`, {
+  const response = await fetchWithTimeout(`${CONFIG.supabaseUrl}/functions/v1/${CONFIG.courseKeyFunction}`, {
     method: "POST",
-    cache: "no-store",
     headers: authHeaders(accessToken),
     body: JSON.stringify({ courseSlug: EXPECTED_COURSE }),
   });
@@ -145,7 +165,7 @@ async function fetchCourseSource(accessToken) {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     const error = new Error(
-      data.message || "Tu sesión está activa, pero esta cuenta no tiene una licencia de Más allá del dolor.",
+      data.message || "Tu cuenta no tiene una licencia activa de Más allá del dolor.",
     );
     error.status = response.status;
     throw error;
@@ -176,51 +196,70 @@ async function launchCourse(source, session) {
   }
 }
 
-async function authorizeAndLaunch(session) {
-  setBusy(true);
+async function start() {
+  if (starting) return;
+  starting = true;
   if (elements.message) elements.message.hidden = true;
   if (elements.ecosystemEntry) elements.ecosystemEntry.hidden = true;
+  setBusy(true, "Recibiendo tu acceso desde KineCheck…");
 
   try {
-    const verified = await validateIdentity(session);
+    if (!configuredCorrectly()) throw new Error("La configuración de acceso no coincide con este producto.");
+    const raw = readSession() || await waitForSession();
+    if (!raw) {
+      showEntry("No recibimos una sesión desde la biblioteca. Vuelve a Biblioteca y abre nuevamente este curso.");
+      return;
+    }
+    const verified = await validateIdentity(raw);
     const source = await fetchCourseSource(verified.access_token);
     setBusy(true, "Preparando el curso protegido…");
     await launchCourse(source, verified);
   } catch (error) {
-    clearSessions();
     setBusy(false);
-    const denied = error.status === 403;
-    showMessage(
-      denied
-        ? `${error.message} Solo se habilita el producto comprado por esta cuenta.`
-        : `${error.message} Vuelve a KineCheck y abre el curso nuevamente.`,
-      true,
-    );
-    showEcosystemEntry(
-      denied
-        ? "Esta cuenta no tiene una licencia activa de Más allá del dolor. Regresa a tu biblioteca para abrir únicamente tus productos disponibles."
-        : "La sesión terminó. Regresa a KineCheck, inicia sesión una vez y vuelve a abrir el curso.",
-    );
+
+    if (error.code === "NETWORK_ERROR") {
+      showMessage(error.message, true);
+      configureEntry({
+        copy: "Tu sesión sigue guardada. Reintenta aquí sin volver a ingresar ni salir de esta pantalla.",
+        showLibrary: true,
+        showRetry: true,
+      });
+      return;
+    }
+
+    if (error.status === 403) {
+      showMessage(`${error.message} Esta cuenta no tiene acceso a este producto.`, true);
+      configureEntry({
+        copy: "Vuelve a tu biblioteca para abrir únicamente tus productos activos.",
+        showLibrary: true,
+        showRetry: false,
+      });
+      return;
+    }
+
+    if (error.status === 401) clearSessions();
+    showMessage(error.message || "No fue posible abrir el curso.", true);
+    configureEntry({
+      copy: error.status === 401
+        ? "La sesión terminó. Vuelve a KineCheck e inicia sesión nuevamente una sola vez."
+        : "Reintenta aquí o vuelve a tu biblioteca.",
+      showLibrary: true,
+      showRetry: error.status !== 401,
+    });
+  } finally {
+    starting = false;
   }
 }
+
+elements.retry?.addEventListener("click", (event) => {
+  event.preventDefault();
+  start();
+});
 
 elements.signOut?.addEventListener("click", () => {
   clearSessions();
   location.replace("https://kinecheck.cl/academy/#biblioteca");
 });
 
-(async function start() {
-  if (!configuredCorrectly()) {
-    showMessage("La configuración de acceso de este curso no coincide con el producto esperado.", true);
-    showEcosystemEntry();
-    return;
-  }
-
-  const session = readSession();
-  if (!session) {
-    showEcosystemEntry();
-    return;
-  }
-
-  await authorizeAndLaunch(session);
-})();
+window.addEventListener("kinecheck:sso-received", () => start());
+start();
