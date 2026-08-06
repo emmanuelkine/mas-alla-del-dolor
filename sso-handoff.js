@@ -18,13 +18,12 @@
   function validSession(session) {
     if (!session?.access_token) return false;
     const expiresAt = Number(session.expires_at || 0);
-    const now = Math.floor(Date.now() / 1000);
-    return !expiresAt || expiresAt > now + 30;
+    return !expiresAt || expiresAt > Math.floor(Date.now() / 1000) + 20;
   }
 
   function normalizeHandoff(handoff) {
     const issuedAt = Number(handoff?.issuedAt);
-    const session = handoff?.session;
+    const session = handoff?.session?.access_token ? handoff.session : handoff;
     if (
       handoff?.type !== HANDOFF_TYPE
       || handoff?.product !== EXPECTED_PRODUCT
@@ -43,35 +42,29 @@
     };
   }
 
-  function clearOldSessions() {
+  function saveSession(session) {
     try {
-      localStorage.removeItem(LEGACY_SESSION_KEY);
-      localStorage.removeItem(SESSION_KEY);
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
       sessionStorage.removeItem(LEGACY_SESSION_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(LEGACY_SESSION_KEY);
+      window.__KINECHECK_SSO_RECEIVED__ = true;
+      window.dispatchEvent(new CustomEvent("kinecheck:sso-received", { detail: { product: EXPECTED_PRODUCT } }));
     } catch {
-      // Limpieza de mejor esfuerzo.
+      // La transferencia por postMessage puede volver a intentarse.
     }
   }
 
-  function saveSession(session) {
-    clearOldSessions();
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    window.__KINECHECK_SSO_RECEIVED__ = true;
-  }
-
-  function notifyAccepted(targetOrigin = "*") {
+  function notifyAccepted(origin = "*") {
     if (!window.opener) return;
     try {
-      window.opener.postMessage({
-        type: ACCEPTED_TYPE,
-        product: EXPECTED_PRODUCT,
-      }, targetOrigin);
+      window.opener.postMessage({ type: ACCEPTED_TYPE, product: EXPECTED_PRODUCT }, origin);
     } catch {
-      // La sesión ya quedó guardada; la notificación solo cierra el intercambio.
+      // La sesión ya fue guardada.
     }
   }
 
-  function sessionFromWindowName() {
+  function readWindowName() {
     if (!window.name) return null;
     try {
       return normalizeHandoff(JSON.parse(window.name));
@@ -82,52 +75,31 @@
     }
   }
 
-  const directSession = sessionFromWindowName();
-  if (directSession) {
-    saveSession(directSession);
+  const direct = readWindowName();
+  if (direct) {
+    saveSession(direct);
     notifyAccepted();
-    return;
   }
 
-  if (!window.opener) {
-    clearOldSessions();
-    return;
-  }
+  if (!window.opener) return;
 
-  clearOldSessions();
-  let completed = false;
-
-  const finish = () => {
-    window.removeEventListener("message", onMessage);
-    window.clearTimeout(timeoutId);
-  };
-
+  let completed = Boolean(direct);
   const onMessage = (event) => {
-    if (
-      completed
-      || event.source !== window.opener
-      || !ALLOWED_ACADEMY_ORIGINS.has(event.origin)
-    ) return;
-
+    if (completed || event.source !== window.opener || !ALLOWED_ACADEMY_ORIGINS.has(event.origin)) return;
     const session = normalizeHandoff(event.data);
     if (!session) return;
-
     completed = true;
     saveSession(session);
     notifyAccepted(event.origin);
-    finish();
-    location.reload();
+    window.removeEventListener("message", onMessage);
   };
 
   window.addEventListener("message", onMessage);
-  const timeoutId = window.setTimeout(finish, 10000);
-
   try {
-    window.opener.postMessage({
-      type: READY_TYPE,
-      product: EXPECTED_PRODUCT,
-    }, "*");
+    window.opener.postMessage({ type: READY_TYPE, product: EXPECTED_PRODUCT }, "*");
   } catch {
-    finish();
+    window.removeEventListener("message", onMessage);
   }
+
+  window.setTimeout(() => window.removeEventListener("message", onMessage), 20000);
 })();
