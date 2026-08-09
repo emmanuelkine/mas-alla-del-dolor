@@ -8,6 +8,7 @@
   const ACCEPTED_TYPE = "kinecheck-sso-accepted";
   const EXPECTED_PRODUCT = "mas-alla-del-dolor";
   const MAX_AGE_MS = 120000;
+  const FRAGMENT_KEY = "kc_handoff";
   const ALLOWED_ACADEMY_ORIGINS = new Set([
     "https://kinecheck-comunicacion-clinica.pages.dev",
     "https://emmanuelkine.github.io",
@@ -51,7 +52,7 @@
       window.__KINECHECK_SSO_RECEIVED__ = true;
       window.dispatchEvent(new CustomEvent("kinecheck:sso-received", { detail: { product: EXPECTED_PRODUCT } }));
     } catch {
-      // La transferencia por postMessage puede volver a intentarse.
+      // La transferencia puede volver a intentarse desde KineCheck.
     }
   }
 
@@ -61,6 +62,38 @@
       window.opener.postMessage({ type: ACCEPTED_TYPE, product: EXPECTED_PRODUCT }, origin);
     } catch {
       // La sesión ya fue guardada.
+    }
+  }
+
+  function decodeBase64Url(value) {
+    const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  function clearHandoffFragment() {
+    if (!window.location.hash) return;
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    if (!params.has(FRAGMENT_KEY)) return;
+    params.delete(FRAGMENT_KEY);
+    const remaining = params.toString();
+    const cleanUrl = `${window.location.pathname}${window.location.search}${remaining ? `#${remaining}` : ""}`;
+    try { window.history.replaceState(window.history.state, "", cleanUrl); } catch { /* mejor esfuerzo */ }
+  }
+
+  function readFragmentHandoff() {
+    if (!window.location.hash) return null;
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const encoded = params.get(FRAGMENT_KEY);
+    if (!encoded) return null;
+    try {
+      return normalizeHandoff(JSON.parse(decodeBase64Url(encoded)));
+    } catch {
+      return null;
+    } finally {
+      clearHandoffFragment();
     }
   }
 
@@ -75,7 +108,7 @@
     }
   }
 
-  const direct = readWindowName();
+  const direct = readFragmentHandoff() || readWindowName();
   if (direct) {
     saveSession(direct);
     notifyAccepted();
