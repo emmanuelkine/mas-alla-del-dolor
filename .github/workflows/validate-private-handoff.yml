@@ -1,0 +1,30 @@
+name: Validar handoff sesión privada
+
+on:
+  pull_request:
+    paths:
+      - "sso-handoff.js"
+      - "index.html"
+      - "tests/private-handoff.test.mjs"
+      - ".github/workflows/validate-private-handoff.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sso-handoff.js"
+      - "index.html"
+      - "tests/private-handoff.test.mjs"
+      - ".github/workflows/validate-private-handoff.yml"
+  workflow_dispatch:
+
+jobs:
+  validate-private-handoff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validar sintaxis
+        run: node --check sso-handoff.js
+      - name: Probar sesión privada fresca
+        run: node --test tests/private-handoff.test.mjs
