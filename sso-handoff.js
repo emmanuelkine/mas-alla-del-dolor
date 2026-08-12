@@ -54,6 +54,10 @@
     const serialized = JSON.stringify(session);
     let storedInSession = false;
 
+    // Canal primario para navegadores embebidos: memoria de la misma página.
+    // No depende de sessionStorage/localStorage y desaparece al cerrar o navegar.
+    window.__KINECHECK_SSO_SESSION__ = session;
+
     try {
       sessionStorage.setItem(SESSION_KEY, serialized);
       sessionStorage.removeItem(LEGACY_SESSION_KEY);
@@ -68,11 +72,11 @@
       localStorage.setItem(LEGACY_SESSION_KEY, serialized);
       clearFallbackSoon();
     } catch {
-      // Si tampoco existe almacenamiento local, el curso podrá reintentarse desde KineCheck.
+      // La sesión permanece disponible en memoria aunque el almacenamiento esté restringido.
     }
 
     window.__KINECHECK_SSO_RECEIVED__ = true;
-    window.__KINECHECK_SSO_STORAGE__ = storedInSession ? "session" : "fallback";
+    window.__KINECHECK_SSO_STORAGE__ = storedInSession ? "session" : "memory-fallback";
     window.dispatchEvent(new CustomEvent("kinecheck:sso-received", { detail: { product: EXPECTED_PRODUCT } }));
   }
 
