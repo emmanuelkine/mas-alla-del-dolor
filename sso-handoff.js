@@ -9,6 +9,7 @@
   const EXPECTED_PRODUCT = "mas-alla-del-dolor";
   const MAX_AGE_MS = 120000;
   const FRAGMENT_KEY = "kc_handoff";
+  const FALLBACK_TTL_MS = 30000;
   const ALLOWED_ACADEMY_ORIGINS = new Set([
     "https://kinecheck-comunicacion-clinica.pages.dev",
     "https://emmanuelkine.github.io",
@@ -43,17 +44,36 @@
     };
   }
 
+  function clearFallbackSoon() {
+    window.setTimeout(() => {
+      try { localStorage.removeItem(LEGACY_SESSION_KEY); } catch { /* mejor esfuerzo */ }
+    }, FALLBACK_TTL_MS);
+  }
+
   function saveSession(session) {
+    const serialized = JSON.stringify(session);
+    let storedInSession = false;
+
     try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      sessionStorage.setItem(SESSION_KEY, serialized);
       sessionStorage.removeItem(LEGACY_SESSION_KEY);
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(LEGACY_SESSION_KEY);
-      window.__KINECHECK_SSO_RECEIVED__ = true;
-      window.dispatchEvent(new CustomEvent("kinecheck:sso-received", { detail: { product: EXPECTED_PRODUCT } }));
+      storedInSession = sessionStorage.getItem(SESSION_KEY) === serialized;
     } catch {
-      // La transferencia puede volver a intentarse desde KineCheck.
+      storedInSession = false;
     }
+
+    try {
+      localStorage.removeItem(SESSION_KEY);
+      // Fallback transitorio para navegadores embebidos (Gmail/Safari) que restringen sessionStorage.
+      localStorage.setItem(LEGACY_SESSION_KEY, serialized);
+      clearFallbackSoon();
+    } catch {
+      // Si tampoco existe almacenamiento local, el curso podrá reintentarse desde KineCheck.
+    }
+
+    window.__KINECHECK_SSO_RECEIVED__ = true;
+    window.__KINECHECK_SSO_STORAGE__ = storedInSession ? "session" : "fallback";
+    window.dispatchEvent(new CustomEvent("kinecheck:sso-received", { detail: { product: EXPECTED_PRODUCT } }));
   }
 
   function notifyAccepted(origin = "*") {
