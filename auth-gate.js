@@ -56,6 +56,7 @@ function readJson(storage, key) {
 }
 
 function clearSessions() {
+  try { window.__KINECHECK_SSO_SESSION__ = null; } catch { /* limpieza de mejor esfuerzo */ }
   try {
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(LEGACY_SESSION_KEY);
@@ -65,7 +66,11 @@ function clearSessions() {
 }
 
 function readSession() {
-  return readJson(sessionStorage, SESSION_KEY) || readJson(localStorage, LEGACY_SESSION_KEY);
+  const memorySession = normalizeSession(window.__KINECHECK_SSO_SESSION__);
+  if (memorySession) return memorySession;
+  return readJson(sessionStorage, SESSION_KEY)
+    || readJson(localStorage, LEGACY_SESSION_KEY)
+    || readJson(localStorage, SESSION_KEY);
 }
 
 async function waitForSession(timeoutMs = 5000) {
